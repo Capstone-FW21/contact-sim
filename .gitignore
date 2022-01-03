@@ -1,0 +1,6 @@
+*.csv
+*.txt
+*.pyc
+*.whl
+*.tar.gz
+/dist

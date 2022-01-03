@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "contact-sim"
+version = "0.1.0"
+description = "Simulation"
+authors = ["Dylan Holmes <holmes.dylan@hotmail.com>"]
+license = "MIT"
+packages = [{include = "contact-sim"}]
+[tool.poetry.dependencies]
+python = "^3.9"
+ctdb-utility-lib = "^0.1.1"
+
+[tool.poetry.dev-dependencies]
+pylint = "^2.12.2"
+black = "^21.12b0"
+jupyter = "^1.0.0"
+jupyterlab = "^3.2.5"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
