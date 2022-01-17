@@ -6,17 +6,29 @@ import numpy as np
 import random
 import csv
 from datetime import datetime, timedelta
+from ctdb_utility_lib.utility import (
+    _execute_statement,
+    connect_to_db,
+    add_person,
+    add_room,
+    add_scan,
+)
 
 
 def random_time():
-    tod = random.randint(0, 23)
+    tod = random.randint(9, 20)
 
-    dow = random.randint(1, 7)
+    chance = random.random()
+
+    if chance <= 0.65:
+        dow = random.randint(6, 7)
+    else:
+        dow = random.randint(1, 5)
 
     return dow * 100 + tod
 
 
-def sim_setup(num_buildings, num_rooms, num_students, min_class, max_class):
+def sim_setup(num_buildings, num_rooms, num_students, min_class, max_class, conn):
     buildings = []
     rooms = []
     classes = []
@@ -26,6 +38,7 @@ def sim_setup(num_buildings, num_rooms, num_students, min_class, max_class):
         buildings.append(building)
         for x in range(num_rooms):
             room = Room(building.id * 100 + x)
+            code = add_room(f"room_{room.id}", 100, f"building_{building.id}", conn)
             building.add_room(room)
             rooms.append(room)
 
@@ -44,8 +57,10 @@ def sim_setup(num_buildings, num_rooms, num_students, min_class, max_class):
             classes.append(c)
 
     for i in range(num_students):
-        stud = Student(i, np.random.choice(classes, 3, replace=False))
+        stud = Student(i, np.random.choice(classes, random.randint(2, 4), replace=False))
         students.append(stud)
+        email = add_person(stud.fname, stud.lname, stud.id, conn)
+        stud.set_email(email)
 
     return buildings, rooms, classes, students
 
@@ -90,7 +105,7 @@ def get_classes_by_dow(classes, dow):
     return courses
 
 
-def sim_step_day(classes, students, day_date: datetime):
+def sim_step_day(classes, students, day_date: datetime, conn):
     # Get the current Day_of_Week integer from python's Date Time object.
     # We add +1 because for the simulation Monday = 1.
     dow = day_date.weekday() + 1
@@ -109,19 +124,20 @@ def sim_step_day(classes, students, day_date: datetime):
                 # Generate a record for each student in the course.
                 for sic in studs_in_course:
                     log = f"{sic.id},{course.id},{course.room.id},{day_date + timedelta(hours=hour)}"
+                    add_scan(sic.email, f"room_{course.room.id}", conn)
                     logs.append(log)
     # Return all logs generated from the day.
     return logs
 
 
-def generate_base_tables(buildings, rooms, classes, students):
+def generate_flatfile_data(buildings, rooms, classes, students):
     with open("buildings.csv", "w+") as file:
-        file.write("building_id")
+        file.write("building_id\n")
         for building in buildings:
             file.write(f"{building.id}\n")
 
     with open("rooms.csv", "w+") as file:
-        file.write("room_id,building_id,\n")
+        file.write("room_id,building_id\n")
         for room in rooms:
             file.write(f"{room.id}, {room.building.id}\n")
 
@@ -145,62 +161,48 @@ def generate_base_tables(buildings, rooms, classes, students):
                 file.write(f"{student.id},{course.id}\n")
 
 
-def simulate_positive_test(student: Student, logs):
-    rooms = []
-    for log in logs:
-        log: str
-        data = log.split(",")
-        std_id = data[0]
-        if std_id != str(student.id):
-            continue
-
-        room_id = data[2]
-        dtime = data[3]
-        rooms.append((room_id, dtime))
-    affected = []
-    for log in logs:
-        data = log.split(",")
-        std_id = data[0]
-        if std_id == str(student.id):
-            continue
-        course_id = data[1]
-        room_id = data[2]
-        dtime = data[3]
-        if (room_id, dtime) in rooms and f"{std_id},{course_id}" not in affected:
-            affected.append(f"{std_id},{course_id}")
-
-    return affected
+def reset_sim_psql_data(con):
+    # Clear the database for new run.
+    _execute_statement(con, "DELETE FROM scans")
+    _execute_statement(con, "DELETE FROM rooms")
+    _execute_statement(con, "DELETE FROM people")
 
 
 if __name__ == "__main__":
     # PARAMETER SETUP
+    RESET_DATA = True
     num_buildings = 1
-    num_rooms = 10
+    num_rooms = 5
     min_class = 1
-    max_class = 3
+    max_class = 4
     num_students = 100
-    day_duration = 14
+    num_days = 14
     start_date = datetime(year=2022, month=1, day=3, hour=0, minute=0)
+
+    # Connection
+    con = connect_to_db()
+    if RESET_DATA:
+        reset_sim_psql_data(con)
 
     # Generate all our initial objects, such as students, buildings, rooms, courses
     buildings, rooms, classes, students = sim_setup(
-        num_buildings, num_rooms, num_students, min_class, max_class
+        num_buildings, num_rooms, num_students, min_class, max_class, con
     )
 
     # Store all logs we see in the record list
     records = []
 
     # Generates a CSV for each "table" as if they were SQL tables.
-    generate_base_tables(buildings, rooms, classes, students)
+    generate_flatfile_data(buildings, rooms, classes, students)
 
     with open("records.csv", "w+") as file:
         file.write("student_id,course_id,room_id,datetime\n")
 
         # Start of simulation, loops for every day given by the duration parameter
-        for i in range(day_duration):
+        for i in range(num_days):
             # Simulates a Single day from the given start_date, students, and classes.
             # Returns a list of logs generated by that day.
-            new_logs = sim_step_day(classes, students, start_date)
+            new_logs = sim_step_day(classes, students, start_date, con)
 
             # Add 24 hours to the current start_date for the next day.
             start_date += timedelta(hours=24)
