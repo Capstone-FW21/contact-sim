@@ -17,6 +17,9 @@ class Student:
     def set_email(self, email: str):
         self._email = email
 
+    def to_sql_tuple(self):
+        return self.email, self.fname + " " + self.lname, self.id
+
     @property
     def fname(self):
         return self._fname
@@ -26,5 +29,5 @@ class Student:
         return self._lname
 
     @property
-    def classes(self):
+    def courses(self):
         return self._classes

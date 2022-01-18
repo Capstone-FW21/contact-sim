@@ -10,6 +10,9 @@ class Room:
     def id(self):
         return self._id
 
+    def to_sql_tuple(self):
+        return self.id, 100, "FAB"
+
     @property
     def building(self):
         return self._building
